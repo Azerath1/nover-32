@@ -2,45 +2,71 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { BookOpen, Menu } from "lucide-react";
-// Используем React Icons для более детальных логотипов
+import { useRouter } from "next/navigation";
+import { BookOpen, Menu, LogOut, User, Settings } from "lucide-react";
 import { FaRegUserCircle } from "react-icons/fa";
 
 import {
   NavigationMenu,
-  NavigationMenuContent,
   NavigationMenuItem,
   NavigationMenuLink,
   NavigationMenuList,
   NavigationMenuTrigger,
+  NavigationMenuContent,
 } from "@/components/ui/navigation-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Search } from "@/components/Search";
+import { getToken, removeToken } from "@/lib/api";
 
 export default function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const router = useRouter();
+
+  // Состояние: null — ещё не известно, false — не залогинен, true — залогинен
+  const [isLoggedIn, setIsLoggedIn] = React.useState<boolean | null>(null);
+
+  // Проверяем токен только на клиенте после монтирования
+  React.useEffect(() => {
+    setIsLoggedIn(!!getToken());
+  }, []);
+
+  const handleLogout = () => {
+    removeToken();
+    localStorage.removeItem("isLoggedIn");
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        {/* Логотип с эффектом наклона и масштаба */}
+      <div className="container mx-auto flex h-16 items-center px-4">
+        {/* Логотип */}
         <Link
           href="/"
           className="group flex items-center gap-2 text-xl font-bold text-blue-500 transition-all"
         >
-          <BookOpen className="h-6 w-6 transition-transform duration-300 group-hover:rotate-15 group-hover:scale-110" />
+          <BookOpen className="h-6 w-6 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110" />
           <span className="tracking-tight">Novera</span>
         </Link>
 
-        {/* Десктопная навигация */}
-        <nav className="hidden md:flex items-center gap-2">
+        {/* Центральная часть: Каталог + Поиск */}
+        <div className="hidden md:flex flex-1 items-center justify-center gap-8">
+          {/* Каталог */}
           <NavigationMenu>
             <NavigationMenuList>
               <NavigationMenuItem>
-                <NavigationMenuTrigger className="bg-transparent hover:bg-accent/50">
+                <NavigationMenuTrigger className="bg-transparent hover:bg-accent/50 text-base">
                   Каталог
                 </NavigationMenuTrigger>
                 <NavigationMenuContent>
@@ -54,71 +80,149 @@ export default function Header() {
                   </ul>
                 </NavigationMenuContent>
               </NavigationMenuItem>
-
-              <NavigationMenuItem>
-                <NavigationMenuLink
-                  asChild
-                  className="group h-10 w-max inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors hover:text-blue-500"
-                >
-                  <Link href="/ranking">Рейтинг</Link>
-                </NavigationMenuLink>
-              </NavigationMenuItem>
             </NavigationMenuList>
           </NavigationMenu>
-        </nav>
 
-        {/* Правая часть управления */}
-        <div className="flex items-center gap-3">
           {/* Поиск */}
-          <div className="hidden sm:block">
+          <div className="max-w-md flex-1">
             <Search />
           </div>
+        </div>
 
-          {/* Переключатель темы (уже настроен нами на h-9) */}
+        {/* Правая часть: Тема + Профиль/Вход */}
+        <div className="flex items-center gap-4">
           <ThemeToggle />
 
-          {/* Кнопка "Войти" — Гибрид вариантов 2 и 3 */}
-          <Button
-            variant="ghost"
-            className="relative group h-9 px-5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 border border-blue-500/20 transition-all duration-300 overflow-hidden hidden sm:flex"
-          >
-            <div className="flex items-center gap-2 relative z-10">
-              <FaRegUserCircle className="h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:-translate-y-0.5" />
-              <span className="font-medium">Войти</span>
-            </div>
-            {/* Анимированная линия подчеркивания */}
-            <span className="absolute bottom-0 left-0 h-0.5 w-full bg-blue-500 scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left" />
-          </Button>
+          {/* Десктоп: Профиль или Вход */}
+          <div className="hidden md:block">
+            {isLoggedIn === null ? (
+              // Заглушка, чтобы избежать hydration mismatch
+              <div className="w-10 h-10 rounded-full bg-muted animate-pulse" />
+            ) : isLoggedIn ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="rounded-full">
+                    <FaRegUserCircle className="h-6 w-6 text-blue-500" />
+                    <span className="sr-only">Профиль</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Мой аккаунт</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href="/profile" className="flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      Профиль
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/admin/novels"
+                      className="flex items-center gap-2"
+                    >
+                      <BookOpen className="h-4 w-4" />
+                      Управление новеллами
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/profile#settings"
+                      className="flex items-center gap-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Настройки
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Выйти
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button asChild className="bg-blue-500 hover:bg-blue-600">
+                <Link href="/login">Войти</Link>
+              </Button>
+            )}
+          </div>
 
-          {/* Мобильное меню (Гамбургер) */}
+          {/* Мобильное меню */}
           <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
             <SheetTrigger asChild className="md:hidden">
-              <Button variant="ghost" size="icon" className="group">
-                <Menu className="h-6 w-6 transition-transform duration-300 group-hover:scale-110" />
+              <Button variant="ghost" size="icon">
+                <Menu className="h-6 w-6" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-75 sm:w-100">
-              <nav className="flex flex-col gap-6 mt-10">
-                <Search />
-                <div className="flex flex-col gap-3">
-                  <Link
-                    href="/catalog"
-                    className="text-lg font-medium hover:text-blue-500 transition-colors"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Каталог
-                  </Link>
-                  <Link
-                    href="/ranking"
-                    className="text-lg font-medium hover:text-blue-500 transition-colors"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Рейтинг
-                  </Link>
+            <SheetContent side="right" className="w-80">
+              <nav className="flex flex-col gap-6 mt-8">
+                <div className="px-4">
+                  <Search />
                 </div>
-                <Button className="w-full bg-blue-500 hover:bg-blue-600 text-white">
-                  Войти
-                </Button>
+
+                {isLoggedIn === null ? null : isLoggedIn ? (
+                  <>
+                    <Link
+                      href="/profile"
+                      className="flex items-center gap-3 p-3 rounded-xl bg-blue-500/5 text-blue-500 border border-blue-500/10"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <FaRegUserCircle className="h-6 w-6" />
+                      <span className="font-semibold text-lg">Мой профиль</span>
+                    </Link>
+
+                    <Link
+                      href="/admin/novels"
+                      className="text-lg font-medium p-2"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      Управление новеллами
+                    </Link>
+
+                    <Button
+                      variant="outline"
+                      className="border-red-500/20 text-red-500 w-full"
+                      onClick={() => {
+                        handleLogout();
+                        setIsMobileMenuOpen(false);
+                      }}
+                    >
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Выйти
+                    </Button>
+                  </>
+                ) : (
+                  <Link
+                    href="/login"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <Button className="w-full bg-blue-500 text-white">
+                      Войти
+                    </Button>
+                  </Link>
+                )}
+
+                <Link
+                  href="/catalog"
+                  className="text-lg font-medium p-2"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  Каталог
+                </Link>
+                <Link
+                  href="/ranking"
+                  className="text-lg font-medium p-2"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  Рейтинг
+                </Link>
+
+                <div className="mt-6">
+                  <ThemeToggle />
+                </div>
               </nav>
             </SheetContent>
           </Sheet>
@@ -128,6 +232,7 @@ export default function Header() {
   );
 }
 
+// ListItem — без изменений
 const ListItem = React.forwardRef<
   React.ElementRef<"a">,
   React.ComponentPropsWithoutRef<"a">

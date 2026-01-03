@@ -4,28 +4,49 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Search as SearchIcon, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { POPULAR_NOVELS, TOP_DAY_NOVELS } from "@/lib/novels-data";
+import { getNovels } from "@/lib/api";
+
+interface Novel {
+  id: number;
+  title: string;
+  genre?: string;
+  image?: string;
+}
 
 export function Search() {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [novels, setNovels] = useState<Novel[]>([]);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // Используем useMemo для объединения списков один раз
-  const allNovels = useMemo(() => [...POPULAR_NOVELS, ...TOP_DAY_NOVELS], []);
+  // Загружаем все новеллы один раз
+  useEffect(() => {
+    async function fetchNovels() {
+      try {
+        const data = await getNovels();
+        setNovels(data);
+      } catch (err) {
+        console.error("Ошибка загрузки новелл для поиска:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchNovels();
+  }, []);
 
-  // Фильтруем результаты на лету. Это эффективнее и убирает ошибку setState-in-effect
+  // Фильтрация результатов
   const results = useMemo(() => {
-    if (query.length < 2) return [];
-    return allNovels
+    if (query.length < 2 || loading) return [];
+    return novels
       .filter((novel) =>
         novel.title.toLowerCase().includes(query.toLowerCase())
       )
-      .slice(0, 5);
-  }, [query, allNovels]);
+      .slice(0, 6);
+  }, [query, novels, loading]);
 
-  // Закрытие при клике вне поиска
+  // Закрытие при клике вне поля
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
@@ -33,13 +54,13 @@ export function Search() {
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside); // ← Исправлено: handleClickOutside
   }, []);
 
-  const handleSelect = (slug: string) => {
+  const handleSelect = (id: number) => {
     setQuery("");
     setIsOpen(false);
-    router.push(`/novel/${slug}`);
+    router.push(`/novel/${id}`);
   };
 
   return (
@@ -73,20 +94,23 @@ export function Search() {
       {/* Выпадающий список результатов */}
       {isOpen && query.length >= 2 && (
         <div className="absolute top-full mt-2 w-full rounded-xl border bg-popover p-2 shadow-xl z-50">
-          {results.length > 0 ? (
+          {loading ? (
+            <div className="p-4 text-center text-sm text-muted-foreground">
+              Загрузка...
+            </div>
+          ) : results.length > 0 ? (
             results.map((novel) => (
               <button
                 key={novel.id}
-                onClick={() => handleSelect(novel.slug)}
+                onClick={() => handleSelect(novel.id)}
                 className="flex w-full items-center gap-3 rounded-lg p-2 hover:bg-muted transition-colors text-left"
               >
                 <div className="relative h-12 w-9 shrink-0 overflow-hidden rounded">
                   <Image
-                    src={novel.image}
+                    src="/cover.png"
                     alt={novel.title}
                     fill
                     className="object-cover"
-                    sizes="36px"
                   />
                 </div>
                 <div className="flex flex-col overflow-hidden">
@@ -94,7 +118,7 @@ export function Search() {
                     {novel.title}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {novel.genre}
+                    {novel.genre || "Жанр не указан"}
                   </span>
                 </div>
               </button>

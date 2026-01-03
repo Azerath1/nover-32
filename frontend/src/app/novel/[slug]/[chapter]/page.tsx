@@ -1,269 +1,257 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
-
-import Link from "next/link";
-import { notFound, useRouter } from "next/navigation";
-import { ArrowLeft, Settings, List } from "lucide-react"; // Удалил лишние иконки
-import { Button } from "@/components/ui/button";
+import React, { useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+  ArrowLeft,
+  Settings,
+  Sun,
+  Moon,
+  Monitor,
+  BookOpen,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Slider } from "@/components/ui/slider"; // Удалил Separator
-import { findNovelBySlug } from "@/lib/novels-data";
-import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const THEMES = [
-  { name: "light", bg: "bg-white", text: "text-gray-900", label: "Светлая" },
-  { name: "sepia", bg: "bg-[#f4ecd8]", text: "text-[#5b4636]", label: "Сепия" },
-  { name: "dark", bg: "bg-[#1a1a1a]", text: "text-[#d1d5db]", label: "Тёмная" },
-  { name: "black", bg: "bg-black", text: "text-gray-300", label: "Ночь" },
+const API_URL = "http://localhost:8000";
+
+interface Chapter {
+  id: number;
+  title: string;
+  content: string;
+  chapter_number: number;
+  created_at: string;
+  novel_id: number;
+}
+
+interface Theme {
+  name: string;
+  bg: string;
+  text: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+}
+
+const THEMES: Theme[] = [
+  {
+    name: "light",
+    bg: "bg-white",
+    text: "text-gray-900",
+    icon: Sun,
+    label: "Светлая",
+  },
+  {
+    name: "sepia",
+    bg: "bg-[#f4ecd8]",
+    text: "text-[#5b4636]",
+    icon: Monitor,
+    label: "Сепия",
+  },
+  {
+    name: "dark",
+    bg: "bg-[#1a1a1a]",
+    text: "text-[#d1d5db]",
+    icon: Moon,
+    label: "Тёмная",
+  },
+  {
+    name: "black",
+    bg: "bg-black",
+    text: "text-gray-300",
+    icon: Moon,
+    label: "Ночь",
+  },
 ];
 
-export default function ChapterPage({
-  params,
-}: {
-  params: Promise<{ slug: string; chapter: string }>;
-}) {
-  const { slug, chapter } = use(params);
+const DEFAULT_THEME = THEMES[2];
+
+export default function ChapterPage() {
+  const params = useParams();
   const router = useRouter();
-  const currentChapterNum = parseInt(chapter);
+  const novelId = params.slug as string;
+  const chapterNum = parseInt(params.chapter as string);
 
-  // Оставляем базовые значения
   const [fontSize, setFontSize] = useState(18);
-  const [currentTheme, setCurrentTheme] = useState(THEMES[0]);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
+  const [currentTheme, setCurrentTheme] = useState(DEFAULT_THEME);
+  const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
-  // 1. Используем один useEffect для начальной синхронизации
   useEffect(() => {
-    const savedSize = localStorage.getItem("novera-font-size");
-    const savedTheme = localStorage.getItem("novera-theme");
+    setMounted(true);
 
-    // Оборачиваем в проверку, чтобы не менять состояние, если данных нет
-    if (savedSize || savedTheme) {
-      if (savedSize) setFontSize(Number(savedSize));
-      if (savedTheme) {
-        const theme = THEMES.find((t) => t.name === savedTheme);
-        if (theme) setCurrentTheme(theme);
+    const savedSize = localStorage.getItem("novera-font-size");
+    const savedThemeName = localStorage.getItem("novera-theme");
+
+    if (savedSize) setFontSize(Number(savedSize));
+    if (savedThemeName) {
+      const theme = THEMES.find((t) => t.name === savedThemeName);
+      if (theme) setCurrentTheme(theme);
+    }
+  }, []);
+
+  useEffect(() => {
+    async function fetchChapter() {
+      try {
+        const res = await fetch(`${API_URL}/novels/${novelId}/chapters/`);
+        if (!res.ok) throw new Error("Не удалось загрузить главы");
+        const chapters: Chapter[] = await res.json();
+
+        const foundChapter = chapters.find(
+          (ch) => ch.chapter_number === chapterNum
+        );
+        setChapter(foundChapter || null);
+      } catch (err) {
+        console.error(err);
+        setChapter(null);
+      } finally {
+        setLoading(false);
       }
     }
 
-    setIsLoaded(true);
-  }, []); // Пустой массив — выполняется 1 раз при монтировании
+    fetchChapter();
+  }, [novelId, chapterNum]);
 
-  // 2. Сохранение настроек (только после того как мы загрузили старые)
   useEffect(() => {
-    if (!isLoaded) return; // Пропускаем первый цикл, пока не загрузились старые данные
+    if (mounted) {
+      localStorage.setItem("novera-font-size", fontSize.toString());
+      localStorage.setItem("novera-theme", currentTheme.name);
+    }
+  }, [fontSize, currentTheme, mounted]);
 
-    localStorage.setItem("novera-font-size", fontSize.toString());
-    localStorage.setItem("novera-theme", currentTheme.name);
-  }, [fontSize, currentTheme, isLoaded]);
-
-  // 3. Прогресс скролла
-  useEffect(() => {
-    const handleScroll = () => {
-      const totalHeight =
-        document.documentElement.scrollHeight - window.innerHeight;
-      setScrollProgress(
-        totalHeight > 0 ? (window.scrollY / totalHeight) * 100 : 0
-      );
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  // 4. Скролл вверх при смене главы (ТЕПЕРЬ ДО RETURN)
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [chapter]);
-
-  // ТОЛЬКО ПОСЛЕ ВСЕХ ХУКОВ ИДУТ ПРОВЕРКИ И ПОИСК ДАННЫХ
-  const novel = findNovelBySlug(slug);
-
-  if (!novel || isNaN(currentChapterNum)) return notFound();
-
-  const hasNext = currentChapterNum < novel.chapters;
-  const hasPrev = currentChapterNum > 1;
-
-  const goToChapter = (num: number) => router.push(`/novel/${slug}/${num}`);
-
-  const chapterData = novel.chapterList[currentChapterNum - 1];
-  const chapterContent =
-    chapterData?.content || "Текст этой главы еще не загружен на сервер.";
+  const appliedTheme = mounted ? currentTheme : DEFAULT_THEME;
+  const hasPrev = chapterNum > 1;
 
   return (
     <div
-      className={cn(
-        "min-h-screen transition-colors duration-300",
-        isLoaded ? currentTheme.bg : "bg-[#1a1a1a]"
-      )}
+      className={`min-h-screen transition-colors duration-500 ${appliedTheme.bg} ${appliedTheme.text}`}
     >
-      <header
-        className={cn(
-          "sticky top-0 z-50 flex h-14 items-center justify-between border-b px-4 transition-colors duration-300 shadow-sm",
-          currentTheme.name === "light" || currentTheme.name === "sepia"
-            ? "border-gray-200 bg-white/90 backdrop-blur"
-            : "border-gray-800 bg-black/80 backdrop-blur"
-        )}
-      >
-        <div
-          className="absolute bottom-0 left-0 h-0.5 bg-blue-600 transition-all duration-100"
-          style={{ width: `${scrollProgress}%` }}
-        />
-
-        <div className="flex items-center gap-2">
-          <Link href={`/novel/${slug}`}>
-            <Button variant="ghost" size="icon" className={currentTheme.text}>
+      {/* Фиксированная шапка */}
+      <header className="fixed top-0 left-0 right-0 z-50 h-16 border-b bg-background/90 backdrop-blur-sm">
+        <div className="container mx-auto flex h-full items-center justify-between px-4">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => router.back()}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
-          </Link>
-          <div className="hidden md:flex flex-col">
-            <span className={cn("text-sm font-bold", currentTheme.text)}>
-              {novel.title}
-            </span>
-            <span className={cn("text-xs opacity-70", currentTheme.text)}>
-              Глава {currentChapterNum}
-            </span>
+            <h1 className="text-lg font-semibold truncate max-w-md">
+              {chapter
+                ? `Глава ${chapter.chapter_number}: ${chapter.title}`
+                : `Глава ${chapterNum}`}
+            </h1>
           </div>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className={currentTheme.text}>
-                <List className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-75 sm:w-100">
-              <SheetHeader>
-                <SheetTitle>Оглавление</SheetTitle>
-              </SheetHeader>
-              <ScrollArea className="h-[calc(100vh-80px)] mt-4">
-                {Array.from({ length: novel.chapters }).map((_, i) => {
-                  const num = i + 1;
-                  return (
-                    <Button
-                      key={num}
-                      variant={
-                        num === currentChapterNum ? "secondary" : "ghost"
-                      }
-                      className="w-full justify-start"
-                      onClick={() => goToChapter(num)}
-                    >
-                      Глава {num}
-                    </Button>
-                  );
-                })}
-              </ScrollArea>
-            </SheetContent>
-          </Sheet>
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className={currentTheme.text}>
+              <Button variant="ghost" size="icon">
                 <Settings className="h-5 w-5" />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 mr-4">
-              <div className="space-y-4">
-                <p className="text-sm font-medium">Настройки текста</p>
-                <div className="flex gap-2">
-                  {THEMES.map((t) => (
-                    <button
-                      key={t.name}
-                      onClick={() => setCurrentTheme(t)}
-                      className={cn(
-                        "h-8 w-8 rounded-full border",
-                        t.bg,
-                        currentTheme.name === t.name && "ring-2 ring-blue-500"
-                      )}
-                    />
-                  ))}
+              <div className="space-y-6">
+                <div>
+                  <h4 className="font-medium mb-4">Тема чтения</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    {THEMES.map((theme) => (
+                      <Button
+                        key={theme.name}
+                        variant={
+                          currentTheme.name === theme.name
+                            ? "default"
+                            : "outline"
+                        }
+                        className="justify-start gap-2"
+                        onClick={() => setCurrentTheme(theme)}
+                      >
+                        <theme.icon className="h-4 w-4" />
+                        {theme.label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
-                <Slider
-                  value={[fontSize]}
-                  min={12}
-                  max={32}
-                  onValueChange={(v) => setFontSize(v[0])}
-                />
+
+                <div>
+                  <h4 className="font-medium mb-4">Размер шрифта</h4>
+                  <Slider
+                    value={[fontSize]}
+                    onValueChange={([value]) => setFontSize(value)}
+                    min={14}
+                    max={28}
+                    step={1}
+                  />
+                  <p className="text-center text-sm mt-2 text-muted-foreground">
+                    {fontSize}px
+                  </p>
+                </div>
               </div>
             </PopoverContent>
           </Popover>
         </div>
       </header>
 
-      <main className="container mx-auto max-w-200 px-4 py-10">
-        {!isLoaded ? (
-          // СОСТОЯНИЕ ЗАГРУЗКИ (SKELETON)
-          <div className="space-y-6">
-            {/* Скелетон заголовка */}
-            <Skeleton className="h-10 w-3/4 mx-auto mb-10" />
-
-            {/* Скелетон текста (строки) */}
-            <div className="space-y-4">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-[90%]" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-[95%]" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-[40%]" />
-            </div>
-
-            {/* Скелетон кнопок навигации */}
-            <div className="mt-16 flex gap-4">
-              <Skeleton className="h-12 flex-1" />
-              <Skeleton className="h-12 flex-1" />
-            </div>
+      {/* Основной контент — с отступом под навбар */}
+      <main className="pt-20 container mx-auto max-w-4xl px-4">
+        {" "}
+        {/* ← pt-20 вместо py-24 */}
+        {loading ? (
+          <div className="space-y-8">
+            <Skeleton className="h-10 w-3/4 mx-auto" />
+            {[...Array(20)].map((_, i) => (
+              <Skeleton key={i} className="h-4 w-full" />
+            ))}
           </div>
-        ) : (
-          // РЕАЛЬНЫЙ КОНТЕНТ (отображается только когда isLoaded === true)
+        ) : chapter ? (
           <>
-            <h1
-              className={cn(
-                "text-3xl font-bold text-center mb-10",
-                currentTheme.text
-              )}
-            >
-              {chapterData?.title || `Глава ${currentChapterNum}`}
+            <h1 className="text-4xl font-bold text-center mb-12 mt-8">
+              Глава {chapter.chapter_number}: {chapter.title}
             </h1>
             <article
-              className={cn("prose-lg whitespace-pre-line", currentTheme.text)}
-              style={{ fontSize: `${fontSize}px`, lineHeight: 1.6 }}
-            >
-              {chapterContent}
-            </article>
-
-            <div className="mt-16 flex gap-4">
-              <Button
-                className="flex-1"
-                variant="outline"
-                disabled={!hasPrev}
-                onClick={() => goToChapter(currentChapterNum - 1)}
-              >
-                Назад
-              </Button>
-              <Button
-                className="flex-1 bg-blue-600 text-white"
-                disabled={!hasNext}
-                onClick={() => goToChapter(currentChapterNum + 1)}
-              >
-                Вперед
-              </Button>
-            </div>
+              className="prose prose-lg max-w-none"
+              style={{ fontSize: `${fontSize}px`, lineHeight: "1.8" }}
+              dangerouslySetInnerHTML={{
+                __html: chapter.content.replace(/\n/g, "<br />"),
+              }}
+            />
           </>
+        ) : (
+          <div className="text-center py-20">
+            <BookOpen className="h-32 w-32 mx-auto text-muted-foreground opacity-50 mb-8" />
+            <h2 className="text-3xl font-bold mb-4">Глава не найдена</h2>
+            <p className="text-xl text-muted-foreground">
+              Возможно, глава ещё не добавлена или номер неверный.
+            </p>
+            <Button
+              variant="outline"
+              className="mt-8"
+              onClick={() => router.back()}
+            >
+              ← Вернуться к новелле
+            </Button>
+          </div>
+        )}
+        {/* Навигация */}
+        {!loading && chapter && (
+          <div className="mt-20 flex gap-4 justify-center pb-10">
+            <Button
+              variant="outline"
+              size="lg"
+              disabled={!hasPrev}
+              onClick={() => router.push(`/novel/${novelId}/${chapterNum - 1}`)}
+            >
+              ← Предыдущая
+            </Button>
+            <Button
+              size="lg"
+              onClick={() => router.push(`/novel/${novelId}/${chapterNum + 1}`)}
+            >
+              Следующая →
+            </Button>
+          </div>
         )}
       </main>
     </div>
